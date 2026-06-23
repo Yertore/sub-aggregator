@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sub_aggregator_db
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: sub_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d sub_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Автоматический запуск миграций при старте базы данных
+  migrate:
+    image: migrate/migrate:v4.15.2
+    container_name: sub_aggregator_migrations
+    volumes:
+      - ./migrations:/migrations
+    command: -path=/migrations -database "postgres://app_user:app_password@postgres:5432/sub_db?sslmode=disable" up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_data:
