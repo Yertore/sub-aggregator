@@ -18,7 +18,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Автоматический запуск миграций при старте базы данных
   migrate:
     image: migrate/migrate:v4.15.2
     container_name: sub_aggregator_migrations
@@ -28,6 +27,24 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sub_aggregator_app
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: app_user
+      DB_PASSWORD: app_password
+      DB_NAME: sub_db
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pg_data:
