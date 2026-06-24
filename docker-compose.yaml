@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: app_password
       POSTGRES_DB: sub_db
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
     container_name: sub_aggregator_migrations
     volumes:
       - ./migrations:/migrations
-    command: -path=/migrations -database "postgres://app_user:app_password@postgres:5432/sub_db?sslmode=disable" up
+    command: -path=/migrations -database "postgres://app_user:app_password@postgres:5435/sub_db?sslmode=disable" up
     depends_on:
       postgres:
         condition: service_healthy
