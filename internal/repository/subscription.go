@@ -123,11 +123,10 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
 	}
-	slog.Info("subscription deleted", "id", id)
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("subscription not found")
 	}
-
+	slog.Info("subscription deleted", "id", id)
 	return nil
 }
 

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -20,6 +19,15 @@ func New(svc *service.Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// Create godoc
+// @Summary      Создать подписку
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        request body model.CreateSubscriptionRequest true "Данные подписки"
+// @Success      201 {object} model.Subscription
+// @Failure      400 {object} map[string]string
+// @Router       /subscriptions [post]
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateSubscriptionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -36,6 +44,14 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sub)
 }
 
+// GetByID godoc
+// @Summary      Получить подписку по ID
+// @Tags         subscriptions
+// @Produce      json
+// @Param        id path string true "UUID подписки"
+// @Success      200 {object} model.Subscription
+// @Failure      404 {object} map[string]string
+// @Router       /subscriptions/{id} [get]
 func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -52,6 +68,15 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sub)
 }
 
+// List godoc
+// @Summary      Список подписок
+// @Tags         subscriptions
+// @Produce      json
+// @Param        user_id      query string false "UUID пользователя"
+// @Param        service_name query string false "Название сервиса"
+// @Success      200 {array}  model.Subscription
+// @Failure      500 {object} map[string]string
+// @Router       /subscriptions [get]
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	serviceName := r.URL.Query().Get("service_name")
@@ -69,6 +94,17 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, subs)
 }
 
+// Update godoc
+// @Summary      Обновить подписку
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        id      path string true "UUID подписки"
+// @Param        request body model.UpdateSubscriptionRequest true "Поля для обновления"
+// @Success      200 {object} model.Subscription
+// @Failure      400 {object} map[string]string
+// @Failure      404 {object} map[string]string
+// @Router       /subscriptions/{id} [put]
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -91,6 +127,13 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sub)
 }
 
+// Delete godoc
+// @Summary      Удалить подписку
+// @Tags         subscriptions
+// @Param        id path string true "UUID подписки"
+// @Success      204
+// @Failure      404 {object} map[string]string
+// @Router       /subscriptions/{id} [delete]
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -106,6 +149,17 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// TotalCost godoc
+// @Summary      Суммарная стоимость подписок
+// @Tags         subscriptions
+// @Produce      json
+// @Param        user_id      query string false "UUID пользователя"
+// @Param        service_name query string false "Название сервиса"
+// @Param        from         query string false "Начало периода MM-YYYY"
+// @Param        to           query string false "Конец периода MM-YYYY"
+// @Success      200 {object} map[string]int
+// @Failure      400 {object} map[string]string
+// @Router       /subscriptions/cost [get]
 func (h *Handler) TotalCost(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	serviceName := r.URL.Query().Get("service_name")
@@ -132,5 +186,5 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 }
 
 func isNotFound(err error) bool {
-	return errors.Is(err, errors.New("")) || strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no rows")
+	return strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no rows")
 }

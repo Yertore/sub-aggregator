@@ -1,3 +1,8 @@
+// @title           Subscription Aggregator API
+// @version         1.0
+// @description     REST сервис для агрегации данных об онлайн подписках
+// @host            localhost:8080
+// @BasePath        /api/v1
 package main
 
 import (
@@ -9,6 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	_ "github.com/Yertore/sub-aggregator/docs"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	"github.com/Yertore/sub-aggregator/internal/config"
 	"github.com/Yertore/sub-aggregator/internal/handler"
@@ -52,6 +60,10 @@ func main() {
 		r.Put("/{id}", h.Update)
 		r.Delete("/{id}", h.Delete)
 	})
+
+	r.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
 
 	slog.Info("starting server", "port", cfg.ServerPort)
 	if err := http.ListenAndServe(":"+cfg.ServerPort, r); err != nil {
