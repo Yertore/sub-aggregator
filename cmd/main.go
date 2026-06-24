@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -16,19 +17,24 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	cfg := config.Load()
 
 	db, err := pgxpool.New(context.Background(), cfg.DSN())
 	if err != nil {
-		log.Fatal("failed to connect to database:", err)
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	if err := db.Ping(context.Background()); err != nil {
-		log.Fatal("database ping failed:", err)
+		slog.Error("database ping failed", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("connected to database")
+	slog.Info("connected to database", "host", cfg.DBHost, "db", cfg.DBName)
 
 	repo := repository.New(db)
 	svc := service.New(repo)
@@ -47,8 +53,9 @@ func main() {
 		r.Delete("/{id}", h.Delete)
 	})
 
-	log.Printf("Starting server on :%s", cfg.ServerPort)
+	slog.Info("starting server", "port", cfg.ServerPort)
 	if err := http.ListenAndServe(":"+cfg.ServerPort, r); err != nil {
-		log.Fatal(err)
+		slog.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }

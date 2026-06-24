@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -35,7 +36,7 @@ func (r *Repository) Create(ctx context.Context, sub *model.Subscription) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("create subscription: %w", err)
 	}
-
+	slog.Info("subscription created", "id", created.ID)
 	return &created, nil
 }
 
@@ -55,7 +56,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*model.Subscriptio
 	if err != nil {
 		return nil, fmt.Errorf("get subscription: %w", err)
 	}
-
+	slog.Info("subscription got", "id", sub.ID)
 	return &sub, nil
 }
 
@@ -84,7 +85,7 @@ func (r *Repository) List(ctx context.Context, userID, serviceName string) ([]*m
 		}
 		subs = append(subs, &sub)
 	}
-
+	slog.Info("subscriptions listed", "count", len(subs))
 	return subs, nil
 }
 
@@ -111,7 +112,7 @@ func (r *Repository) Update(ctx context.Context, sub *model.Subscription) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("update subscription: %w", err)
 	}
-
+	slog.Info("subscription updated", "id", updated.ID)
 	return &updated, nil
 }
 
@@ -122,7 +123,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
 	}
-
+	slog.Info("subscription deleted", "id", id)
 	if ct.RowsAffected() == 0 {
 		return fmt.Errorf("subscription not found")
 	}
@@ -144,6 +145,6 @@ func (r *Repository) TotalCost(ctx context.Context, userID, serviceName, from, t
 	if err != nil {
 		return 0, fmt.Errorf("total cost: %w", err)
 	}
-
+	slog.Info("total cost calculated", "total", total)
 	return total, nil
 }
