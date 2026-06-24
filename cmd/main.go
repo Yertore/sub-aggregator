@@ -10,14 +10,16 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	_ "github.com/Yertore/sub-aggregator/docs"
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
+	_ "github.com/Yertore/sub-aggregator/docs"
 	"github.com/Yertore/sub-aggregator/internal/config"
 	"github.com/Yertore/sub-aggregator/internal/handler"
 	"github.com/Yertore/sub-aggregator/internal/repository"
@@ -65,9 +67,31 @@ func main() {
 		httpSwagger.URL("/swagger/doc.json"),
 	))
 
-	slog.Info("starting server", "port", cfg.ServerPort)
-	if err := http.ListenAndServe(":"+cfg.ServerPort, r); err != nil {
-		slog.Error("server failed", "error", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:    ":" + cfg.ServerPort,
+		Handler: r,
 	}
+
+	go func() {
+		slog.Info("starting server", "port", cfg.ServerPort)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	slog.Info("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("server forced to shutdown", "error", err)
+	}
+
+	slog.Info("server stopped")
 }

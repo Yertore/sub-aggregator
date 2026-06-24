@@ -6,16 +6,25 @@ import (
 	"time"
 
 	"github.com/Yertore/sub-aggregator/internal/model"
-	"github.com/Yertore/sub-aggregator/internal/repository"
 )
 
 const dateLayout = "01-2006"
 
-type Service struct {
-	repo *repository.Repository
+// Repository defines the interface that the service depends on.
+type Repository interface {
+	Create(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
+	GetByID(ctx context.Context, id string) (*model.Subscription, error)
+	List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error)
+	Update(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
+	Delete(ctx context.Context, id string) error
+	TotalCost(ctx context.Context, userID, serviceName, from, to string) (int, error)
 }
 
-func New(repo *repository.Repository) *Service {
+type Service struct {
+	repo Repository
+}
+
+func New(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 

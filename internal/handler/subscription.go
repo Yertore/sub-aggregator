@@ -1,21 +1,32 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Yertore/sub-aggregator/internal/apperror"
 	"github.com/Yertore/sub-aggregator/internal/model"
-	"github.com/Yertore/sub-aggregator/internal/service"
 )
 
-type Handler struct {
-	svc *service.Service
+// Service defines the interface that the handler depends on.
+type Service interface {
+	Create(ctx context.Context, req *model.CreateSubscriptionRequest) (*model.Subscription, error)
+	GetByID(ctx context.Context, id string) (*model.Subscription, error)
+	List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error)
+	Update(ctx context.Context, id string, req *model.UpdateSubscriptionRequest) (*model.Subscription, error)
+	Delete(ctx context.Context, id string) error
+	TotalCost(ctx context.Context, userID, serviceName, from, to string) (int, error)
 }
 
-func New(svc *service.Service) *Handler {
+type Handler struct {
+	svc Service
+}
+
+func New(svc Service) *Handler {
 	return &Handler{svc: svc}
 }
 
@@ -57,7 +68,7 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	sub, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		if isNotFound(err) {
+		if errors.Is(err, apperror.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "subscription not found")
 			return
 		}
@@ -116,7 +127,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	sub, err := h.svc.Update(r.Context(), id, &req)
 	if err != nil {
-		if isNotFound(err) {
+		if errors.Is(err, apperror.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "subscription not found")
 			return
 		}
@@ -138,7 +149,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		if isNotFound(err) {
+		if errors.Is(err, apperror.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "subscription not found")
 			return
 		}
@@ -183,8 +194,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-func isNotFound(err error) bool {
-	return strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no rows")
 }

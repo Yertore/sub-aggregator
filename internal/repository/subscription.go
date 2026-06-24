@@ -2,13 +2,19 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Yertore/sub-aggregator/internal/apperror"
 	"github.com/Yertore/sub-aggregator/internal/model"
 )
+
+const dbTimeout = 5 * time.Second
 
 type Repository struct {
 	db *pgxpool.Pool
@@ -19,6 +25,9 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) Create(ctx context.Context, sub *model.Subscription) (*model.Subscription, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `
 		INSERT INTO subscriptions (service_name, price, user_id, start_date, end_date)
 		VALUES ($1, $2, $3, $4, $5)
@@ -36,11 +45,15 @@ func (r *Repository) Create(ctx context.Context, sub *model.Subscription) (*mode
 	if err != nil {
 		return nil, fmt.Errorf("create subscription: %w", err)
 	}
+
 	slog.Info("subscription created", "id", created.ID)
 	return &created, nil
 }
 
 func (r *Repository) GetByID(ctx context.Context, id string) (*model.Subscription, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `
 		SELECT id, service_name, price, user_id, start_date, end_date, created_at, updated_at
 		FROM subscriptions
@@ -54,13 +67,20 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*model.Subscriptio
 		&sub.StartDate, &sub.EndDate, &sub.CreatedAt, &sub.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperror.ErrNotFound
+		}
 		return nil, fmt.Errorf("get subscription: %w", err)
 	}
-	slog.Info("subscription got", "id", sub.ID)
+
+	slog.Info("subscription fetched", "id", sub.ID)
 	return &sub, nil
 }
 
 func (r *Repository) List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `
 		SELECT id, service_name, price, user_id, start_date, end_date, created_at, updated_at
 		FROM subscriptions
@@ -85,11 +105,15 @@ func (r *Repository) List(ctx context.Context, userID, serviceName string) ([]*m
 		}
 		subs = append(subs, &sub)
 	}
+
 	slog.Info("subscriptions listed", "count", len(subs))
 	return subs, nil
 }
 
 func (r *Repository) Update(ctx context.Context, sub *model.Subscription) (*model.Subscription, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `
 		UPDATE subscriptions
 		SET service_name = $1,
@@ -110,27 +134,39 @@ func (r *Repository) Update(ctx context.Context, sub *model.Subscription) (*mode
 		&updated.StartDate, &updated.EndDate, &updated.CreatedAt, &updated.UpdatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, apperror.ErrNotFound
+		}
 		return nil, fmt.Errorf("update subscription: %w", err)
 	}
+
 	slog.Info("subscription updated", "id", updated.ID)
 	return &updated, nil
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `DELETE FROM subscriptions WHERE id = $1`
 
 	ct, err := r.db.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
 	}
+
 	if ct.RowsAffected() == 0 {
-		return fmt.Errorf("subscription not found")
+		return apperror.ErrNotFound
 	}
+
 	slog.Info("subscription deleted", "id", id)
 	return nil
 }
 
 func (r *Repository) TotalCost(ctx context.Context, userID, serviceName, from, to string) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
+	defer cancel()
+
 	query := `
 		SELECT COALESCE(SUM(price), 0)
 		FROM subscriptions
@@ -144,6 +180,7 @@ func (r *Repository) TotalCost(ctx context.Context, userID, serviceName, from, t
 	if err != nil {
 		return 0, fmt.Errorf("total cost: %w", err)
 	}
+
 	slog.Info("total cost calculated", "total", total)
 	return total, nil
 }
