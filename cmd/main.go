@@ -9,15 +9,16 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Yertore/sub-aggregator/internal/config"
 	"github.com/Yertore/sub-aggregator/internal/handler"
 	"github.com/Yertore/sub-aggregator/internal/repository"
 	"github.com/Yertore/sub-aggregator/internal/service"
 )
 
 func main() {
-	dsn := "host=localhost port=5435 user=app_user password=app_password dbname=sub_db sslmode=disable"
+	cfg := config.Load()
 
-	db, err := pgxpool.New(context.Background(), dsn)
+	db, err := pgxpool.New(context.Background(), cfg.DSN())
 	if err != nil {
 		log.Fatal("failed to connect to database:", err)
 	}
@@ -46,8 +47,8 @@ func main() {
 		r.Delete("/{id}", h.Delete)
 	})
 
-	log.Println("Starting server on :8080")
-	if err := http.ListenAndServe(":8080", r); err != nil {
+	log.Printf("Starting server on :%s", cfg.ServerPort)
+	if err := http.ListenAndServe(":"+cfg.ServerPort, r); err != nil {
 		log.Fatal(err)
 	}
 }
