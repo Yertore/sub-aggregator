@@ -2,11 +2,16 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Yertore/sub-aggregator/internal/handler"
+	"github.com/Yertore/sub-aggregator/internal/repository"
+	"github.com/Yertore/sub-aggregator/internal/service"
 )
 
 func main() {
@@ -24,12 +29,25 @@ func main() {
 
 	log.Println("connected to database")
 
-	http.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "pong")
+	repo := repository.New(db)
+	svc := service.New(repo)
+	h := handler.New(svc)
+
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	r.Route("/api/v1/subscriptions", func(r chi.Router) {
+		r.Post("/", h.Create)
+		r.Get("/", h.List)
+		r.Get("/cost", h.TotalCost)
+		r.Get("/{id}", h.GetByID)
+		r.Put("/{id}", h.Update)
+		r.Delete("/{id}", h.Delete)
 	})
 
 	log.Println("Starting server on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatal(err)
 	}
 }
