@@ -61,6 +61,14 @@ paths:
         in: query
         name: service_name
         type: string
+      - description: Лимит (по умолчанию 20, макс 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Смещение (по умолчанию 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:

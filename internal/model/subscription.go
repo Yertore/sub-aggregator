@@ -29,3 +29,10 @@ type UpdateSubscriptionRequest struct {
 	StartDate   string `json:"start_date,omitempty"`
 	EndDate     string `json:"end_date,omitempty"`
 }
+
+type ListFilter struct {
+	UserID      string
+	ServiceName string
+	Limit       int
+	Offset      int
+}

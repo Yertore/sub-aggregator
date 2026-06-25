@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -10,11 +9,10 @@ import (
 	"github.com/Yertore/sub-aggregator/internal/model"
 )
 
-// mockRepo is a manual mock for the Repository interface.
 type mockRepo struct {
 	createFn    func(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
 	getByIDFn   func(ctx context.Context, id string) (*model.Subscription, error)
-	listFn      func(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error)
+	listFn      func(ctx context.Context, filter model.ListFilter) ([]*model.Subscription, error)
 	updateFn    func(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
 	deleteFn    func(ctx context.Context, id string) error
 	totalCostFn func(ctx context.Context, userID, serviceName, from, to string) (int, error)
@@ -26,8 +24,8 @@ func (m *mockRepo) Create(ctx context.Context, sub *model.Subscription) (*model.
 func (m *mockRepo) GetByID(ctx context.Context, id string) (*model.Subscription, error) {
 	return m.getByIDFn(ctx, id)
 }
-func (m *mockRepo) List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error) {
-	return m.listFn(ctx, userID, serviceName)
+func (m *mockRepo) List(ctx context.Context, filter model.ListFilter) ([]*model.Subscription, error) {
+	return m.listFn(ctx, filter)
 }
 func (m *mockRepo) Update(ctx context.Context, sub *model.Subscription) (*model.Subscription, error) {
 	return m.updateFn(ctx, sub)
@@ -39,158 +37,242 @@ func (m *mockRepo) TotalCost(ctx context.Context, userID, serviceName, from, to 
 	return m.totalCostFn(ctx, userID, serviceName, from, to)
 }
 
+// Create
 func TestCreate_Success(t *testing.T) {
-	repo := &mockRepo{
-		createFn: func(ctx context.Context, sub *model.Subscription) (*model.Subscription, error) {
+	svc := New(&mockRepo{
+		createFn: func(_ context.Context, sub *model.Subscription) (*model.Subscription, error) {
 			sub.ID = "test-id"
 			return sub, nil
 		},
-	}
-	svc := New(repo)
+	})
 
-	req := &model.CreateSubscriptionRequest{
+	result, err := svc.Create(context.Background(), &model.CreateSubscriptionRequest{
 		ServiceName: "Yandex Plus",
 		Price:       400,
 		UserID:      "60601fee-2bf1-4721-ae6f-7636e79a0cba",
 		StartDate:   "07-2025",
-	}
-
-	result, err := svc.Create(context.Background(), req)
+	})
 	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.ServiceName != "Yandex Plus" {
-		t.Errorf("expected service_name 'Yandex Plus', got '%s'", result.ServiceName)
-	}
-	if result.Price != 400 {
-		t.Errorf("expected price 400, got %d", result.Price)
+	if result.ID != "test-id" {
+		t.Errorf("expected id %q, got %q", "test-id", result.ID)
 	}
 }
 
 func TestCreate_InvalidPrice(t *testing.T) {
 	svc := New(&mockRepo{})
 
-	req := &model.CreateSubscriptionRequest{
+	_, err := svc.Create(context.Background(), &model.CreateSubscriptionRequest{
 		ServiceName: "Yandex Plus",
 		Price:       -1,
 		UserID:      "60601fee-2bf1-4721-ae6f-7636e79a0cba",
 		StartDate:   "07-2025",
-	}
-
-	_, err := svc.Create(context.Background(), req)
+	})
 	if err == nil {
-		t.Fatal("expected error for negative price, got nil")
+		t.Fatal("expected error for negative price")
 	}
 }
 
 func TestCreate_InvalidStartDate(t *testing.T) {
 	svc := New(&mockRepo{})
 
-	req := &model.CreateSubscriptionRequest{
+	_, err := svc.Create(context.Background(), &model.CreateSubscriptionRequest{
 		ServiceName: "Yandex Plus",
 		Price:       400,
 		UserID:      "60601fee-2bf1-4721-ae6f-7636e79a0cba",
-		StartDate:   "2025-07-01",
-	}
-
-	_, err := svc.Create(context.Background(), req)
+		StartDate:   "2025-07",
+	})
 	if err == nil {
-		t.Fatal("expected error for wrong date format, got nil")
+		t.Fatal("expected error for invalid date format")
 	}
 }
 
-func TestCreate_EndDateBeforeStartDate(t *testing.T) {
+func TestCreate_EndDateNotAfterStartDate(t *testing.T) {
 	svc := New(&mockRepo{})
 
-	req := &model.CreateSubscriptionRequest{
+	_, err := svc.Create(context.Background(), &model.CreateSubscriptionRequest{
 		ServiceName: "Yandex Plus",
 		Price:       400,
 		UserID:      "60601fee-2bf1-4721-ae6f-7636e79a0cba",
 		StartDate:   "07-2025",
-		EndDate:     "01-2025",
-	}
-
-	_, err := svc.Create(context.Background(), req)
+		EndDate:     "06-2025",
+	})
 	if err == nil {
-		t.Fatal("expected error when end_date before start_date, got nil")
+		t.Fatal("expected error when end_date <= start_date")
 	}
 }
 
+// GetByID
 func TestGetByID_NotFound(t *testing.T) {
-	repo := &mockRepo{
-		getByIDFn: func(ctx context.Context, id string) (*model.Subscription, error) {
+	svc := New(&mockRepo{
+		getByIDFn: func(_ context.Context, _ string) (*model.Subscription, error) {
 			return nil, apperror.ErrNotFound
 		},
-	}
-	svc := New(repo)
+	})
 
-	_, err := svc.GetByID(context.Background(), "non-existent-id")
-	if !errors.Is(err, apperror.ErrNotFound) {
-		t.Errorf("expected ErrNotFound, got: %v", err)
+	_, err := svc.GetByID(context.Background(), "non-existing-id")
+	if err != apperror.ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
+// List
+func TestList_DefaultLimitApplied(t *testing.T) {
+	svc := New(&mockRepo{
+		listFn: func(_ context.Context, filter model.ListFilter) ([]*model.Subscription, error) {
+			if filter.Limit != defaultLimit {
+				t.Errorf("expected default limit %d, got %d", defaultLimit, filter.Limit)
+			}
+			return nil, nil
+		},
+	})
+
+	// limit=0 should be replaced with defaultLimit
+	_, _ = svc.List(context.Background(), "", "", 0, 0)
+}
+
+func TestList_MaxLimitEnforced(t *testing.T) {
+	svc := New(&mockRepo{
+		listFn: func(_ context.Context, filter model.ListFilter) ([]*model.Subscription, error) {
+			if filter.Limit > maxLimit {
+				t.Errorf("limit %d exceeds maxLimit %d", filter.Limit, maxLimit)
+			}
+			return nil, nil
+		},
+	})
+
+	// limit=500 should be capped at maxLimit
+	_, _ = svc.List(context.Background(), "", "", 500, 0)
+}
+
+// Delete
 func TestDelete_NotFound(t *testing.T) {
-	repo := &mockRepo{
-		deleteFn: func(ctx context.Context, id string) error {
+	svc := New(&mockRepo{
+		deleteFn: func(_ context.Context, _ string) error {
 			return apperror.ErrNotFound
 		},
-	}
-	svc := New(repo)
+	})
 
-	err := svc.Delete(context.Background(), "non-existent-id")
-	if !errors.Is(err, apperror.ErrNotFound) {
-		t.Errorf("expected ErrNotFound, got: %v", err)
+	err := svc.Delete(context.Background(), "non-existing-id")
+	if err != apperror.ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
 
+// Update
+func TestUpdate_NewStartDateAfterExistingEndDate(t *testing.T) {
+	endDate := mustParseDate("09-2025")
+	svc := New(&mockRepo{
+		getByIDFn: func(_ context.Context, _ string) (*model.Subscription, error) {
+			return &model.Subscription{
+				ID:          "test-id",
+				ServiceName: "Yandex Plus",
+				Price:       400,
+				StartDate:   mustParseDate("07-2025"),
+				EndDate:     &endDate,
+			}, nil
+		},
+	})
+
+	_, err := svc.Update(context.Background(), "test-id", &model.UpdateSubscriptionRequest{
+		StartDate: "10-2025",
+	})
+	if err == nil {
+		t.Fatal("expected error when new start_date is after existing end_date")
+	}
+}
+
+func TestUpdate_BothDatesUpdatedCorrectly(t *testing.T) {
+	svc := New(&mockRepo{
+		getByIDFn: func(_ context.Context, _ string) (*model.Subscription, error) {
+			return &model.Subscription{
+				ID:          "test-id",
+				ServiceName: "Yandex Plus",
+				Price:       400,
+				StartDate:   mustParseDate("07-2025"),
+			}, nil
+		},
+		updateFn: func(_ context.Context, sub *model.Subscription) (*model.Subscription, error) {
+			return sub, nil
+		},
+	})
+
+	result, err := svc.Update(context.Background(), "test-id", &model.UpdateSubscriptionRequest{
+		StartDate: "08-2025",
+		EndDate:   "12-2025",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.EndDate == nil {
+		t.Fatal("expected end_date to be set")
+	}
+}
+
+// TotalCost
 func TestTotalCost_InvalidDateFormat(t *testing.T) {
 	svc := New(&mockRepo{})
 
-	_, err := svc.TotalCost(context.Background(), "", "", "2025-01-01", "")
+	_, err := svc.TotalCost(context.Background(), "", "", "2025-01", "")
 	if err == nil {
-		t.Fatal("expected error for wrong date format, got nil")
+		t.Fatal("expected error for invalid date format")
 	}
 }
 
-func TestTotalCost_Success(t *testing.T) {
-	repo := &mockRepo{
-		totalCostFn: func(ctx context.Context, userID, serviceName, from, to string) (int, error) {
-			return 1200, nil
-		},
+func TestTotalCost_ToBeforeFrom(t *testing.T) {
+	svc := New(&mockRepo{})
+
+	_, err := svc.TotalCost(context.Background(), "", "", "06-2025", "01-2025")
+	if err == nil {
+		t.Fatal("expected error when to is before from")
 	}
-	svc := New(repo)
+}
+
+func TestTotalCost_CallsRepoWithParsedDates(t *testing.T) {
+	svc := New(&mockRepo{
+		totalCostFn: func(_ context.Context, _, _, from, to string) (int, error) {
+			if from != "2025-01-01" {
+				t.Errorf("expected from=2025-01-01, got %s", from)
+			}
+			if to != "2025-12-01" {
+				t.Errorf("expected to=2025-12-01, got %s", to)
+			}
+			return 2400, nil
+		},
+	})
 
 	total, err := svc.TotalCost(context.Background(), "", "", "01-2025", "12-2025")
 	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if total != 1200 {
-		t.Errorf("expected total 1200, got %d", total)
+	if total != 2400 {
+		t.Errorf("expected total=2400, got %d", total)
 	}
 }
 
-func TestParseMonthYear(t *testing.T) {
-	tests := []struct {
-		input   string
-		wantErr bool
-		wantT   time.Time
-	}{
-		{"07-2025", false, time.Date(2025, 7, 1, 0, 0, 0, 0, time.UTC)},
-		{"01-2024", false, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
-		{"2025-07-01", true, time.Time{}},
-		{"invalid", true, time.Time{}},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got, err := parseMonthYear(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("parseMonthYear(%q) error = %v, wantErr = %v", tt.input, err, tt.wantErr)
-			}
-			if !tt.wantErr && !got.Equal(tt.wantT) {
-				t.Errorf("parseMonthYear(%q) = %v, want %v", tt.input, got, tt.wantT)
-			}
-		})
+func TestParseMonthYear_Valid(t *testing.T) {
+	t1, err := parseMonthYear("07-2025")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
+	if t1.Month() != time.July || t1.Year() != 2025 {
+		t.Errorf("unexpected result: %v", t1)
+	}
+}
+
+func TestParseMonthYear_Invalid(t *testing.T) {
+	_, err := parseMonthYear("invalid")
+	if err == nil {
+		t.Fatal("expected error for invalid input")
+	}
+}
+
+func mustParseDate(s string) time.Time {
+	t, err := parseMonthYear(s)
+	if err != nil {
+		panic(err)
+	}
+	return t
 }

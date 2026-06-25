@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -16,7 +17,7 @@ import (
 type Service interface {
 	Create(ctx context.Context, req *model.CreateSubscriptionRequest) (*model.Subscription, error)
 	GetByID(ctx context.Context, id string) (*model.Subscription, error)
-	List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error)
+	List(ctx context.Context, userID, serviceName string, limit, offset int) ([]*model.Subscription, error)
 	Update(ctx context.Context, id string, req *model.UpdateSubscriptionRequest) (*model.Subscription, error)
 	Delete(ctx context.Context, id string) error
 	TotalCost(ctx context.Context, userID, serviceName, from, to string) (int, error)
@@ -85,6 +86,8 @@ func (h *Handler) GetByID(w http.ResponseWriter, r *http.Request) {
 // @Produce      json
 // @Param        user_id      query string false "UUID пользователя"
 // @Param        service_name query string false "Название сервиса"
+// @Param        limit        query int    false "Лимит (по умолчанию 20, макс 100)"
+// @Param        offset       query int    false "Смещение (по умолчанию 0)"
 // @Success      200 {array}  model.Subscription
 // @Failure      500 {object} map[string]string
 // @Router       /subscriptions [get]
@@ -92,7 +95,21 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	serviceName := r.URL.Query().Get("service_name")
 
-	subs, err := h.svc.List(r.Context(), userID, serviceName)
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	subs, err := h.svc.List(r.Context(), userID, serviceName, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

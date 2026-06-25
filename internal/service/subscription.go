@@ -8,13 +8,16 @@ import (
 	"github.com/Yertore/sub-aggregator/internal/model"
 )
 
-const dateLayout = "01-2006"
+const (
+	dateLayout   = "01-2006"
+	defaultLimit = 20
+	maxLimit     = 100
+)
 
-// Repository defines the interface that the service depends on.
 type Repository interface {
 	Create(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
 	GetByID(ctx context.Context, id string) (*model.Subscription, error)
-	List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error)
+	List(ctx context.Context, filter model.ListFilter) ([]*model.Subscription, error)
 	Update(ctx context.Context, sub *model.Subscription) (*model.Subscription, error)
 	Delete(ctx context.Context, id string) error
 	TotalCost(ctx context.Context, userID, serviceName, from, to string) (int, error)
@@ -56,7 +59,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateSubscriptionReque
 		if err != nil {
 			return nil, fmt.Errorf("invalid end_date: %w", err)
 		}
-		if endDate.Before(startDate) {
+		if !endDate.After(startDate) {
 			return nil, fmt.Errorf("end_date must be after start_date")
 		}
 		sub.EndDate = &endDate
@@ -72,8 +75,24 @@ func (s *Service) GetByID(ctx context.Context, id string) (*model.Subscription, 
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *Service) List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error) {
-	return s.repo.List(ctx, userID, serviceName)
+func (s *Service) List(ctx context.Context, userID, serviceName string, limit, offset int) ([]*model.Subscription, error) {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	filter := model.ListFilter{
+		UserID:      userID,
+		ServiceName: serviceName,
+		Limit:       limit,
+		Offset:      offset,
+	}
+	return s.repo.List(ctx, filter)
 }
 
 func (s *Service) Update(ctx context.Context, id string, req *model.UpdateSubscriptionRequest) (*model.Subscription, error) {
@@ -91,23 +110,31 @@ func (s *Service) Update(ctx context.Context, id string, req *model.UpdateSubscr
 		}
 		existing.Price = req.Price
 	}
+
+	newStart := existing.StartDate
+	newEnd := existing.EndDate
+
 	if req.StartDate != "" {
-		startDate, err := parseMonthYear(req.StartDate)
+		parsed, err := parseMonthYear(req.StartDate)
 		if err != nil {
 			return nil, fmt.Errorf("invalid start_date: %w", err)
 		}
-		existing.StartDate = startDate
+		newStart = parsed
 	}
 	if req.EndDate != "" {
-		endDate, err := parseMonthYear(req.EndDate)
+		parsed, err := parseMonthYear(req.EndDate)
 		if err != nil {
 			return nil, fmt.Errorf("invalid end_date: %w", err)
 		}
-		if endDate.Before(existing.StartDate) {
-			return nil, fmt.Errorf("end_date must be after start_date")
-		}
-		existing.EndDate = &endDate
+		newEnd = &parsed
 	}
+
+	if newEnd != nil && !newEnd.After(newStart) {
+		return nil, fmt.Errorf("end_date must be after start_date")
+	}
+
+	existing.StartDate = newStart
+	existing.EndDate = newEnd
 
 	return s.repo.Update(ctx, existing)
 }
@@ -132,7 +159,15 @@ func (s *Service) TotalCost(ctx context.Context, userID, serviceName, from, to s
 		if err != nil {
 			return 0, fmt.Errorf("invalid to: %w", err)
 		}
-		toDate = t.AddDate(0, 1, -1).Format("2006-01-02")
+		toDate = t.Format("2006-01-02")
+	}
+
+	if fromDate != "" && toDate != "" {
+		fromT, _ := time.Parse("2006-01-02", fromDate)
+		toT, _ := time.Parse("2006-01-02", toDate)
+		if toT.Before(fromT) {
+			return 0, fmt.Errorf("to must be after from")
+		}
 	}
 
 	return s.repo.TotalCost(ctx, userID, serviceName, fromDate, toDate)

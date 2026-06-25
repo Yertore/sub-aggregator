@@ -77,7 +77,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*model.Subscriptio
 	return &sub, nil
 }
 
-func (r *Repository) List(ctx context.Context, userID, serviceName string) ([]*model.Subscription, error) {
+func (r *Repository) List(ctx context.Context, filter model.ListFilter) ([]*model.Subscription, error) {
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
@@ -86,9 +86,10 @@ func (r *Repository) List(ctx context.Context, userID, serviceName string) ([]*m
 		FROM subscriptions
 		WHERE ($1 = '' OR user_id::text = $1)
 		  AND ($2 = '' OR service_name ILIKE $2)
-		ORDER BY created_at DESC`
+		ORDER BY created_at DESC
+		LIMIT $3 OFFSET $4`
 
-	rows, err := r.db.Query(ctx, query, userID, serviceName)
+	rows, err := r.db.Query(ctx, query, filter.UserID, filter.ServiceName, filter.Limit, filter.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
@@ -167,16 +168,36 @@ func (r *Repository) TotalCost(ctx context.Context, userID, serviceName, from, t
 	ctx, cancel := context.WithTimeout(ctx, dbTimeout)
 	defer cancel()
 
-	query := `
-		SELECT COALESCE(SUM(price), 0)
-		FROM subscriptions
-		WHERE ($1 = '' OR user_id::text = $1)
-		  AND ($2 = '' OR service_name ILIKE $2)
-		  AND ($3 = '' OR start_date >= $3::date)
-		  AND ($4 = '' OR start_date <= $4::date)`
+	var query string
+	var args []any
+
+	if from != "" && to != "" {
+		query = `
+			SELECT COALESCE(SUM(
+				price * (
+					(EXTRACT(YEAR FROM LEAST(COALESCE(end_date, $4::date), $4::date)) -
+					 EXTRACT(YEAR FROM GREATEST(start_date, $3::date))) * 12 +
+					(EXTRACT(MONTH FROM LEAST(COALESCE(end_date, $4::date), $4::date)) -
+					 EXTRACT(MONTH FROM GREATEST(start_date, $3::date))) + 1
+				)::int
+			), 0)::int
+			FROM subscriptions
+			WHERE ($1 = '' OR user_id::text = $1)
+			  AND ($2 = '' OR service_name ILIKE $2)
+			  AND start_date <= $4::date
+			  AND (end_date IS NULL OR end_date >= $3::date)`
+		args = []any{userID, serviceName, from, to}
+	} else {
+		query = `
+			SELECT COALESCE(SUM(price), 0)
+			FROM subscriptions
+			WHERE ($1 = '' OR user_id::text = $1)
+			  AND ($2 = '' OR service_name ILIKE $2)`
+		args = []any{userID, serviceName}
+	}
 
 	var total int
-	err := r.db.QueryRow(ctx, query, userID, serviceName, from, to).Scan(&total)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&total)
 	if err != nil {
 		return 0, fmt.Errorf("total cost: %w", err)
 	}

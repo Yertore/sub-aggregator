@@ -36,6 +36,18 @@ const docTemplate = `{
                         "description": "Название сервиса",
                         "name": "service_name",
                         "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Лимит (по умолчанию 20, макс 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Смещение (по умолчанию 0)",
+                        "name": "offset",
+                        "in": "query"
                     }
                 ],
                 "responses": {
